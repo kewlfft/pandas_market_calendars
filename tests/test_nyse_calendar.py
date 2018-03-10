@@ -1,6 +1,8 @@
 
 import pandas as pd
 import pytz
+import os
+from pandas.testing import assert_index_equal
 from pandas_market_calendars.exchange_calendar_nyse import NYSEExchangeCalendar
 
 
@@ -12,6 +14,7 @@ def test_time_zone():
 def test_open_time_tz():
     nyse = NYSEExchangeCalendar()
     assert nyse.open_time.tzinfo == nyse.tz
+
 
 def test_close_time_tz():
     nyse = NYSEExchangeCalendar()
@@ -53,11 +56,15 @@ def test_special_holidays():
     # 9/11
     # Sept 11, 12, 13, 14 2001
     nyse = NYSEExchangeCalendar()
-    good_dates = nyse.valid_days('2001-01-01', '2016-12-31')
+    good_dates = nyse.valid_days('1985-01-01', '2016-12-31')
     assert pd.Timestamp("9/11/2001") not in good_dates
     assert pd.Timestamp("9/12/2001") not in good_dates
     assert pd.Timestamp("9/13/2001") not in good_dates
     assert pd.Timestamp("9/14/2001") not in good_dates
+
+    # Hurricane Gloria
+    # Sept 27, 1985
+    assert pd.Timestamp("9/27/1985") not in good_dates
 
     # Hurricane Sandy
     # Oct 29, 30 2012
@@ -232,3 +239,24 @@ def test_early_close_independence_day_thursday():
     assert nyse.open_at_time(schedule, wednesday_before) is False
     assert nyse.open_at_time(schedule, friday_after_open) is True
     assert nyse.open_at_time(schedule, friday_after) is True
+
+
+def test_all_full_day_holidays_since_1928(request):
+    """
+    Perform a full comparison of all known full day NYSE holidays since 1928/01/01 and
+    make sure that it matches.
+    """
+    # get the expected dates from the csv file
+    expected = pd.read_csv(os.path.join(request.fspath.dirname, 'data', 'nyse_all_full_day_holidays_since_1928.csv'),
+                           index_col=0, parse_dates=True, header=None).index
+    del expected.name
+
+    # calculated expected
+    nyse = NYSEExchangeCalendar()
+    actual = pd.DatetimeIndex(nyse.adhoc_holidays).tz_convert(None).sort_values()
+    slice_locs = actual.slice_locs(expected[0], expected[-1])
+    actual = actual[slice_locs[0]:slice_locs[1]]
+    actual = actual.append(nyse.regular_holidays.holidays(expected[0], expected[-1]))
+    actual = actual.sort_values().unique()
+
+    assert_index_equal(expected, actual)
